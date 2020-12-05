@@ -48,6 +48,15 @@ def concat(n, pre='c'):
                 f.write(cf.read())
                 f.write('\n')
 
+def parseruri(uri):
+    if uri.startswith('http'):
+        uri = uri.strip('ht:/')
+    if uri.startswith('www.jjxsw.com'):
+        uri = ''.join(uri.split('/')[2:])
+    if not '/' in uri or len(uri.split('/')) != 2:
+        raise TypeError('Error url to get ovel from')
+    urr= 'http://www.ijjxsw.com/read/%s/{}.html' % uri
+    return urr
 
 def main():
     global uri, fn, pagen, nums, concatn
@@ -58,19 +67,22 @@ def main():
     concatn = 3
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--pagen', '-p', help='page numbers of the novel', default=pagen)
-    parser.add_argument('--thread', '-T', help='the threads to download the pages', type=int, default=nums)
-    parser.add_argument('--noconcat', '-noc', help='Without concating files', action='store_true')
-    parser.add_argument('--concat', '-c', 
+    parser.add_argument('-p', '--pagen',help='page numbers of the novel', default=pagen)
+    parser.add_argument('-u', '--url', help='The url for jjxsw, format as 2num/5nums, or the full website like http://www.jjxsw.com/read/../.....(. stands for a number)'
+                        default=uri)
+    parser.add_argument('-T', '--thread', help='the threads to download the pages', type=int, default=nums)
+    parser.add_argument('-noc', '--noconcat', help='Without concating files', action='store_true')
+    parser.add_argument('-c', '--concat', 
             help='The count to concat the files '
             'format as concatfilenums or concatfilenums;concatfileprefix', default='3;c')
-    parser.add_argument('--quiet', '-q', help='without output', action='store_true')
+    parser.add_argument('-q', '--quiet', help='without output', action='store_true')
     args = parser.parse_args()
 
     pagen = args.pagen
     nums = args.thread
     cons = args.concat
     q = args.quiet
+    uri = parseruri(args.url)
 
     de = deque(range(1, pagen+ 1))
     ts = [Thread(target=thr, args=(de,q)) for _ in range(nums)]
