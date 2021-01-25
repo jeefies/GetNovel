@@ -1,109 +1,93 @@
 import re
-import io
-import sys
+import os.path
 import codecs
+import zipfile
 import requests
-import argparse
 from threading import Thread
 from collections import deque
-from contextlib import redirect_stdout as rdstdout
 
-def get(page, q=False):
-    url = uri.format(page)
-    f = requests.get(url).text.replace('\u3000', '  ')
-    if not q:print('get page', page, end='\t', flush=True)
-    r = re.findall('<p>(.*?)</p>', f)
-    file = fn.format(page)
-    with codecs.open(file, 'w') as f:
-        f.writelines(map(lambda x: x+'\n', r))
+class Novel:
+    _p = re.compile('<p>(.*?)</p>')
+    max_thrs = 5
 
-def thr(de, q):
-    while de:
-        try:
-            get(de.popleft(), q)
-        except Exception as e:
-            _e = e
-    else:
-        raise _e
+    def __init__(self, url, pagen):
+        if not url.endswith('/'):
+            url += '/'
+        self.url = url
+        self.pagen = pagen
+        self._ses = None
 
-def check(q):
-    import os
-    fs = os.listdir('.')
-    for n in range(pagen):
-        f = fn.format(n)
-        if not f in fs:
-            get(f, q)
+    @property
+    def ses(self):
+        if not self._ses:
+            self._ses = requests.session()
+        return self._ses
 
-def concat(n, pre='c'):
-    for a in range(1, pagen + 1, n):
-        cfs = []
-        cfn = '%s%d.txt' % (pre, int(a / n) + 1)
-        with codecs.open(cfn, 'w') as f:
-            for i in range(n):
-                try:
-                    cfs.append(codecs.open(fn.format(a + i)))
-                except:
-                    pass
-            for cf in cfs:
-                f.write(cf.read())
-                f.write('\n')
+    def getall(self):
+        print("Getting all...", end='  ', flush = True)
+        pages = deque(range(1, self.pagen + 1))
+        self.plain = tuple(map(lambda x : "%d.txt" % x, pages))
+        def ithr(p):
+            while p:
+                n = p.pop()
+                self.getpage(n)
+                print("get", n, end=' ', flush=True)
+            print("Get Finish!")
+        thrs = [Thread(None, ithr, "NovelGet%d" % i, [pages]) for i in range(self.max_thrs)]
+        for t in thrs:
+            t.start()
+        for t in thrs:
+            t.join()
 
-def parseruri(uri):
-    if uri.startswith('http'):
-        uri = uri.strip('ht:/')
-    if uri.startswith('www.jjxsw.com'):
-        uri = ''.join(uri.split('/')[2:])
-    if not '/' in uri or len(uri.split('/')) != 2:
-        raise TypeError('Error url to get ovel from')
-    urr= 'http://www.ijjxsw.com/read/%s/{}.html' % uri
-    return urr
+    def check(self):
+        if not hasattr(self, 'plain'):
+            self.getall()
+        if len(self.plain) != self.pagen:
+            self.plain = tuple("%d.txt" % i for i in range(1, self.pagen + 1))
+        for pn, fn in enumerate(self.plain):
+            if not os.path.exists(fn):
+                print("Missing page %d" % pn)
+                self.getpage(pn)
 
-def main():
-    global uri, fn, pagen, nums, concatn
-    uri = 'http://www.ijjxsw.com/read/11/32981/{}.html'
-    fn = '{}.txt'
-    pagen = 2299
-    nums = 50
-    concatn = 3
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument('-p', '--pagen',help='page numbers of the novel', default=pagen)
-    parser.add_argument('-u', '--url', help='The url for jjxsw, format as 2num/5nums, or the full website like http://www.jjxsw.com/read/../.....(. stands for a number)'
-                        default=uri)
-    parser.add_argument('-T', '--thread', help='the threads to download the pages', type=int, default=nums)
-    parser.add_argument('-noc', '--noconcat', help='Without concating files', action='store_true')
-    parser.add_argument('-c', '--concat', 
-            help='The count to concat the files '
-            'format as concatfilenums or concatfilenums;concatfileprefix', default='3;c')
-    parser.add_argument('-q', '--quiet', help='without output', action='store_true')
-    args = parser.parse_args()
-
-    pagen = args.pagen
-    nums = args.thread
-    cons = args.concat
-    q = args.quiet
-    uri = parseruri(args.url)
-
-    de = deque(range(1, pagen+ 1))
-    ts = [Thread(target=thr, args=(de,q)) for _ in range(nums)]
-    if not q:
-        print('Thread use', nums, ', has', pagen, 'pages')
-    for t in ts:
-        t.start()
-    for t in ts:
-        t.join()
-    check(q)
-    if not args.noconcat:
-        if ';' in cons:
-            concatn, pre = cons.split(';')
+    def concat(self, concat = 4, prefix="C"):
+        self.check()
+        cct = self.cct = deque()
+        for i in range(1, self.pagen + 1, concat):
+            fn = prefix + str((i + 3) // 4) + '.txt'
+            cct.append(fn)
+            with open(fn, 'x') as wf:
+                for a in range(i, i + concat):
+                    fn = str(a) + '.txt'
+                    try:
+                        with codecs.open(fn) as rf:
+                            wf.write(rf.read())
+                    except:
+                        break
+    
+    def zipall(self):
+        if not hasattr(self, 'cct'):
+            if not hasattr(self, 'plain'):
+                self.getall()
+                return self.zipall()
+            with zipfile.ZipFile('all.zip', 'w', zipfile.ZIP_DEFLATED, compresslevel=9) as f:
+                for pf in self.plain:
+                    f.write(pf)
+            return "Zip All PlainText".split()
         else:
-            concatn = cons
-        try:
-            concatn = int(concatn)
-        except:
-            print('please enter a correct format arg')
-            sys.exit(1)
-        concat(concatn, pre)
+            with zipfile.ZipFile('all.zip', 'w', zipfile.ZIP_DEFALTED, compresslevel=9) as f:
+                for cf in self.cct:
+                    f.write(cf)
+            return "Zip All Concat".split()
 
-if __name__ == '__main__':
-    main()
+
+    def getpage(self, page):
+        fn = str(page) + '.txt'
+        if os.path.exists(fn): return
+        url = self.url + str(page) + '.html'
+        f = self.ses.get(url).text.replace('\u3000', '  ')
+        r = self._p.findall(f)
+        try:
+            with codecs.open(fn, 'x') as f:
+                f.write('\n'.join(r))
+        except:
+            pass
